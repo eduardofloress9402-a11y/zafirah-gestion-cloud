@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block content %}
+{% set is_supplier = request.url.path == '/suppliers' %}
+<div class="page-head"><div><p class="eyebrow">Contactos</p><h1>{{ 'Proveedores' if is_supplier else 'Clientes' }}</h1></div></div>
+<div class="grid two"><section class="card"><h2>Agregar {{ 'proveedor' if is_supplier else 'cliente' }}</h2><form method="post" action="/contacts/save" class="stack"><input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="kind" value="{{ 'supplier' if is_supplier else 'customer' }}"><label>Nombre<input name="name" required></label><label>Teléfono<input name="phone"></label><label>Email<input type="email" name="email"></label><label>Notas<textarea name="notes" rows="3"></textarea></label><button class="btn primary">Guardar</button></form></section>
+<section class="card"><h2>Listado</h2>{% for x in items %}<div class="contact-row"><div><b>{{ x.name }}</b><small>{{ x.phone or '' }} {{ '· ' + x.email if x.email else '' }}</small></div></div>{% else %}<p class="muted">Sin registros.</p>{% endfor %}</section></div>{% endblock %}

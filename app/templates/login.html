@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Ingresar | ZAFIRAH Gestión{% endblock %}{% block content %}
+<section class="auth-card">
+  <div class="logo-mark">Z</div><h1>ZAFIRAH Gestión</h1><p>Administración de stock, producción, ventas y rentabilidad.</p>
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  <form method="post" action="/login" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <label>Usuario<input name="username" required autocomplete="username"></label>
+    <label>Contraseña<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit">Ingresar</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% block content %}
+<div class="page-head"><div><p class="eyebrow">Mes actual</p><h1>Panel de control</h1></div><a class="btn primary" href="/sales/new">+ Nueva venta</a></div>
+<section class="kpis">
+  <article><span>Ventas</span><strong>{{ revenue|money }}</strong></article>
+  <article><span>Ganancia bruta</span><strong>{{ gross|money }}</strong></article>
+  <article><span>Gastos</span><strong>{{ expenses|money }}</strong></article>
+  <article class="accent"><span>Ganancia neta</span><strong>{{ net|money }}</strong></article>
+</section>
+<div class="grid two">
+<section class="card"><div class="card-head"><h2>Stock crítico</h2><a href="/products">Ver productos</a></div>
+  {% if not low_products and not low_materials %}<p class="muted">Sin alertas de stock.</p>{% endif %}
+  {% for p in low_products %}<div class="stock-line"><div><b>{{ p.name }}</b><small>Producto · mínimo {{ p.min_stock|num }}</small></div><span class="pill danger">{{ p.stock|num }}</span></div>{% endfor %}
+  {% for m in low_materials %}<div class="stock-line"><div><b>{{ m.name }}</b><small>Insumo · mínimo {{ m.min_stock|num }} {{ m.unit }}</small></div><span class="pill warn">{{ m.stock|num }}</span></div>{% endfor %}
+</section>
+<section class="card"><div class="card-head"><h2>Últimas ventas</h2><a href="/sales">Ver todas</a></div>
+  {% for s in recent %}<div class="stock-line"><div><b>#{{ s.id }} · {{ s.date.strftime('%d/%m/%Y') }}</b><small>{{ s.channel }} · {{ s.payment_method }}</small></div><span class="pill {{ 'muted-pill' if s.status=='void' else 'ok-pill' }}">{{ s.total|money }}</span></div>{% else %}<p class="muted">Todavía no hay ventas.</p>{% endfor %}
+</section></div>
+<section class="quick-actions card"><h2>Accesos rápidos</h2><div class="action-grid"><a href="/production/new">Registrar producción</a><a href="/purchases/new">Registrar compra</a><a href="/expenses">Registrar gasto</a><a href="/reports">Ver rentabilidad</a><a href="/movements">Auditar stock</a><a href="/backup">Descargar backup</a></div></section>
+{% endblock %}

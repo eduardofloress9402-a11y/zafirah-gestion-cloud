@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block title %}Configurar ZAFIRAH Gestión{% endblock %}{% block content %}
+<section class="auth-card">
+  <div class="logo-mark">Z</div><h1>Configurar ZAFIRAH Gestión</h1><p>Creá el usuario administrador. Esta pantalla aparece una sola vez.</p>
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  <form method="post" action="/setup" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <label>Usuario<input name="username" value="admin" required autocomplete="username"></label>
+    <label>Contraseña<input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+    <label class="check"><input type="checkbox" name="seed_catalog" value="1" checked> Cargar el catálogo inicial de jabones, velas y tabletas ZAFIRAH</label>
+    <button class="btn primary" type="submit">Crear sistema</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#8c6b79">
+  <title>{% block title %}ZAFIRAH Gestión{% endblock %}</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+{% if user %}
+<header class="topbar">
+  <a class="brand" href="/">ZAFIRAH <span>Gestión</span></a>
+  <button class="menu-btn" type="button" onclick="document.body.classList.toggle('nav-open')">☰</button>
+  <nav>
+    <a href="/">Inicio</a><a href="/sales">Ventas</a><a href="/production">Producción</a>
+    <a href="/purchases">Compras</a><a href="/products">Productos</a><a href="/materials">Insumos</a>
+    <a href="/recipes">Recetas</a><a href="/expenses">Gastos</a><a href="/reports">Informes</a>
+    <details class="nav-more"><summary>Más</summary><div><a href="/suppliers">Proveedores</a><a href="/customers">Clientes</a><a href="/movements">Movimientos</a><a href="/export/stock.csv">Exportar stock</a><a href="/backup">Backup</a><a href="/account">Mi cuenta</a></div></details>
+  </nav>
+  <form method="post" action="/logout" class="logout"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="btn ghost small">Salir</button></form>
+</header>
+{% endif %}
+<main class="container {% if not user %}auth-container{% endif %}">
+  {% if flash %}<div class="alert {{ 'error' if flash.kind == 'error' else 'ok' }}">{{ flash.msg }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+<script>
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/static/sw.js').catch(()=>{});
+function addRow(tableId, templateId){
+  const tbody=document.querySelector('#'+tableId+' tbody'); const tpl=document.getElementById(templateId);
+  tbody.appendChild(tpl.content.cloneNode(true));
+  const row=tbody.lastElementChild; if(row) row.querySelectorAll('select[name="product_id"]').forEach(syncPrice);
+}
+function delRow(btn){ const tr=btn.closest('tr'); if(tr) tr.remove(); }
+function syncPrice(sel){
+  const opt=sel.options[sel.selectedIndex]; const row=sel.closest('tr'); const input=row?.querySelector('[name="unit_price"]');
+  if(input && (!input.value || input.dataset.auto==='1')) { input.value=opt.dataset.price||''; input.dataset.auto='1'; }
+  const stock=row?.querySelector('.stock-preview'); if(stock) stock.textContent=opt.dataset.stock||'—';
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
