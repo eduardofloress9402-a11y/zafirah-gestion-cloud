@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: zafirah-gestion
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: ZAFIRAH_SECRET
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "1"
