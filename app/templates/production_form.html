@@ -1,3 +1,13 @@
 {% extends "base.html" %}{% block content %}
 <div class="page-head"><div><p class="eyebrow">Producción</p><h1>Registrar lote</h1></div><a class="btn ghost" href="/production">Volver</a></div>
-<form method="post" action="/production/save" class="card form-card"><input type="hidden" name="csrf_token" value="{{ csrf }}"><div class="form-grid"><label>Fecha<input type="date" name="date" value="{{ today.isoformat() }}" required></label><label>Producto con receta<select name="product_id" required>{% for p in products %}<option value="{{ p.id }}">{{ p.name }} · stock {{ p.stock|num }}</option>{% endfor %}</select></label><label>Cantidad a fabricar<input type="number" step="0.001" min="0.001" name="qty" required></label></div>{% if not products %}<div class="alert error">Primero tenés que crear al menos una receta.</div>{% endif %}<label class="wide">Notas del lote<textarea name="notes" rows="3"></textarea></label><p class="help">Al confirmar, el sistema descontará automáticamente los insumos de la receta, calculará el costo del lote y sumará las unidades terminadas al stock.</p><div class="form-actions"><button class="btn primary" {{ 'disabled' if not products }}>Confirmar producción</button></div></form>{% endblock %}
+<form method="post" action="/production/save" class="card form-card"><input type="hidden" name="csrf_token" value="{{ csrf }}">
+<datalist id="productSuggestions">{% for p in products %}<option value="{{ p.name }}">Stock {{ p.stock|num }}{% if p.recipe %} · con receta{% else %} · sin receta{% endif %}</option>{% endfor %}</datalist>
+<div class="form-grid">
+<label>Fecha<input type="date" name="date" value="{{ today.isoformat() }}" required></label>
+<label>Producto<input type="text" name="product_name" list="productSuggestions" placeholder="Escribí el producto..." autocomplete="off" required></label>
+<label>Cantidad a fabricar<input type="number" step="0.001" min="0.001" name="qty" required></label>
+<label>Costo unitario manual <span class="muted">(si no tiene receta)</span><input type="number" step="0.0001" min="0" name="unit_cost_manual" placeholder="Opcional"></label>
+</div>
+<p class="help">Podés escribir cualquier producto. Si ya tiene receta, el sistema descuenta automáticamente sus insumos y calcula el costo. Si no tiene receta, registra igualmente el lote y suma el producto al stock; en ese caso podés indicar un costo unitario manual.</p>
+<label class="wide">Notas del lote<textarea name="notes" rows="3"></textarea></label>
+<div class="form-actions"><button class="btn primary">Confirmar producción</button></div></form>{% endblock %}

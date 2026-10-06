@@ -2,6 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import csv, io, os, secrets, json, zipfile, tempfile
+from uuid import uuid4
 
 from fastapi import FastAPI, Request, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, FileResponse
@@ -86,6 +87,58 @@ def add_movement(db, entity_type, obj, delta, reason, source_type=None, source_i
 def parse_date(s, default=None):
     try: return datetime.strptime(s, "%Y-%m-%d").date()
     except: return default or date.today()
+
+def get_or_create_material(db: Session, raw_name: str):
+    """Resolve an insumo by name; create it automatically when it does not exist."""
+    name = " ".join(str(raw_name or "").strip().split())
+    if not name:
+        return None
+    material = (db.query(Material)
+                .filter(func.lower(Material.name) == name.lower())
+                .first())
+    if material:
+        if not material.active:
+            material.active = True
+        return material
+    material = Material(
+        sku=f"AUTO-{uuid4().hex[:10].upper()}",
+        name=name,
+        unit="unidad",
+        avg_cost=D0,
+        stock=D0,
+        min_stock=D0,
+        active=True,
+    )
+    db.add(material)
+    db.flush()
+    return material
+
+def get_or_create_product(db: Session, raw_name: str):
+    """Resolve a producto by name; create it automatically when it does not exist."""
+    name = " ".join(str(raw_name or "").strip().split())
+    if not name:
+        return None
+    product = (db.query(Product)
+               .filter(func.lower(Product.name) == name.lower())
+               .first())
+    if product:
+        if not product.active:
+            product.active = True
+        return product
+    product = Product(
+        sku=f"AUTO-P-{uuid4().hex[:10].upper()}",
+        name=name,
+        category="Otros",
+        sale_price=D0,
+        cost=D0,
+        stock=D0,
+        min_stock=D0,
+        active=True,
+    )
+    db.add(product)
+    db.flush()
+    return product
+
 
 @app.exception_handler(401)
 async def unauthorized(request: Request, exc):
@@ -224,13 +277,30 @@ def recipe_edit(rid:int,request:Request,db:Session=Depends(get_db)):
 @app.post("/recipes/save")
 async def recipe_save(request:Request,db:Session=Depends(get_db)):
     require_user(request,db); f=await request.form(); csrf_guard(request,f)
-    rid=f.get("id"); product_id=int(f.get("product_id")); rec=db.get(Recipe,int(rid)) if rid else db.query(Recipe).filter(Recipe.product_id==product_id).first()
-    if not rec: rec=Recipe(product_id=product_id); db.add(rec)
-    rec.product_id=product_id; rec.yield_qty=max(D(f.get("yield_qty"),"1"),Decimal("0.001")); rec.notes=str(f.get("notes","")).strip() or None
+    rid=f.get("id")
+    product=None
+    product_name=str(f.get("product_name","")).strip()
+    if product_name:
+        product=get_or_create_product(db,product_name)
+    elif f.get("product_id"):
+        product=db.get(Product,int(f.get("product_id")))
+    if not product:
+        flash(request,"Indicá un producto para la receta.","error")
+        return RedirectResponse("/recipes/new",303)
+    rec=db.get(Recipe,int(rid)) if rid else db.query(Recipe).filter(Recipe.product_id==product.id).first()
+    if not rec: rec=Recipe(product_id=product.id); db.add(rec)
+    rec.product_id=product.id; rec.yield_qty=max(D(f.get("yield_qty"),"1"),Decimal("0.001")); rec.notes=str(f.get("notes","")).strip() or None
     rec.items.clear()
-    mids=f.getlist("material_id"); qtys=f.getlist("qty")
-    for mid,q in zip(mids,qtys):
-        if mid and D(q)>0: rec.items.append(RecipeItem(material_id=int(mid),qty=D(q)))
+    names=f.getlist("material_name"); qtys=f.getlist("qty")
+    # Compatibilidad con formularios viejos que todavía envíen material_id.
+    if not names:
+        mids=f.getlist("material_id")
+        names=[db.get(Material,int(mid)).name if mid and db.get(Material,int(mid)) else "" for mid in mids]
+    for name,q in zip(names,qtys):
+        qty=D(q)
+        material=get_or_create_material(db,name)
+        if material and qty>0:
+            rec.items.append(RecipeItem(material_id=material.id,qty=qty))
     db.commit(); flash(request,"Receta guardada."); return RedirectResponse("/recipes",303)
 
 # ---------- Contacts ----------
@@ -274,10 +344,17 @@ async def purchase_save(request:Request,db:Session=Depends(get_db)):
     require_user(request,db); f=await request.form(); csrf_guard(request,f)
     p=Purchase(supplier_id=int(f.get("supplier_id")) if f.get("supplier_id") else None,date=parse_date(str(f.get("date"))),notes=str(f.get("notes","")).strip() or None)
     db.add(p); db.flush(); total=D0; affected=[]
-    for mid,q,c in zip(f.getlist("material_id"),f.getlist("qty"),f.getlist("unit_cost")):
+    names=f.getlist("material_name")
+    qtys=f.getlist("qty"); costs=f.getlist("unit_cost")
+    # Compatibilidad con formularios viejos que todavía envíen material_id.
+    if not names:
+        mids=f.getlist("material_id")
+        names=[db.get(Material,int(mid)).name if mid and db.get(Material,int(mid)) else "" for mid in mids]
+    for name,q,c in zip(names,qtys,costs):
         qty=D(q); cost=D(c)
-        if not mid or qty<=0: continue
-        m=db.get(Material,int(mid)); sub=qty*cost; total+=sub; affected.append(m.id)
+        m=get_or_create_material(db,name)
+        if not m or qty<=0: continue
+        sub=qty*cost; total+=sub; affected.append(m.id)
         db.add(PurchaseItem(purchase_id=p.id,material_id=m.id,qty=qty,unit_cost=cost,subtotal=sub))
         add_movement(db,"material",m,qty,f"Compra #{p.id}","purchase",p.id)
     p.total=total
@@ -314,10 +391,20 @@ async def sale_save(request:Request,db:Session=Depends(get_db)):
     s=Sale(customer_id=int(f.get("customer_id")) if f.get("customer_id") else None,date=parse_date(str(f.get("date"))),payment_method=str(f.get("payment_method","Efectivo")),channel=str(f.get("channel","Directa")),notes=str(f.get("notes","")).strip() or None)
     db.add(s); db.flush(); total=D0; cogs=D0
     parsed=[]
-    for pid,q,price in zip(f.getlist("product_id"),f.getlist("qty"),f.getlist("unit_price")):
+    names=f.getlist("product_name")
+    pids=f.getlist("product_id")
+    qtys=f.getlist("qty"); prices=f.getlist("unit_price")
+    count=max(len(names),len(pids),len(qtys),len(prices))
+    for i in range(count):
+        name=names[i] if i < len(names) else ""
+        pid=pids[i] if i < len(pids) else ""
+        q=qtys[i] if i < len(qtys) else ""
+        price=prices[i] if i < len(prices) else ""
         qty=D(q)
-        if not pid or qty<=0: continue
-        p=db.get(Product,int(pid)); up=D(price) if D(price)>0 else D(p.sale_price)
+        if qty<=0: continue
+        p=get_or_create_product(db,name) if str(name).strip() else (db.get(Product,int(pid)) if pid else None)
+        if not p: continue
+        up=D(price) if D(price)>0 else D(p.sale_price)
         if D(p.stock)<qty:
             db.rollback(); flash(request,f"Stock insuficiente de {p.name}.","error"); return RedirectResponse("/sales/new",303)
         parsed.append((p,qty,up))
@@ -347,20 +434,31 @@ def production(request:Request,db:Session=Depends(get_db)):
 @app.get("/production/new",response_class=HTMLResponse)
 def production_new(request:Request,db:Session=Depends(get_db)):
     if (r:=guard(request,db)): return r
-    products=db.query(Product).join(Recipe).filter(Product.active==True).order_by(Product.name).all()
+    products=db.query(Product).filter(Product.active==True).order_by(Product.name).all()
     return render(request,db,"production_form.html",products=products)
 
 @app.post("/production/save")
 async def production_save(request:Request,db:Session=Depends(get_db)):
     require_user(request,db); f=await request.form(); csrf_guard(request,f)
-    pid=int(f.get("product_id")); qty=D(f.get("qty")); p=db.query(Product).options(joinedload(Product.recipe).joinedload(Recipe.items).joinedload(RecipeItem.material)).get(pid)
-    if not p or not p.recipe or qty<=0: flash(request,"Producto o cantidad inválida.","error"); return RedirectResponse("/production/new",303)
-    factor=qty/D(p.recipe.yield_qty); requirements=[]; total_cost=D0
-    for ri in p.recipe.items:
-        needed=D(ri.qty)*factor
-        if D(ri.material.stock)<needed:
-            flash(request,f"Insumo insuficiente: {ri.material.name}. Necesitás {num(needed)} {ri.material.unit}.","error"); return RedirectResponse("/production/new",303)
-        requirements.append((ri.material,needed)); total_cost+=needed*D(ri.material.avg_cost)
+    product_name=str(f.get("product_name","")).strip()
+    p=get_or_create_product(db,product_name) if product_name else (db.get(Product,int(f.get("product_id"))) if f.get("product_id") else None)
+    qty=D(f.get("qty"))
+    if not p or qty<=0:
+        flash(request,"Producto o cantidad inválida.","error"); return RedirectResponse("/production/new",303)
+    p=db.query(Product).options(joinedload(Product.recipe).joinedload(Recipe.items).joinedload(RecipeItem.material)).filter(Product.id==p.id).first()
+    requirements=[]; total_cost=D0
+    if p.recipe:
+        factor=qty/D(p.recipe.yield_qty)
+        for ri in p.recipe.items:
+            needed=D(ri.qty)*factor
+            if D(ri.material.stock)<needed:
+                flash(request,f"Insumo insuficiente: {ri.material.name}. Necesitás {num(needed)} {ri.material.unit}.","error"); return RedirectResponse("/production/new",303)
+            requirements.append((ri.material,needed)); total_cost+=needed*D(ri.material.avg_cost)
+    else:
+        manual_unit_cost=D(f.get("unit_cost_manual"))
+        if manual_unit_cost<=0:
+            manual_unit_cost=D(p.cost)
+        total_cost=qty*manual_unit_cost
     run=ProductionRun(product_id=p.id,date=parse_date(str(f.get("date"))),qty=qty,total_cost=total_cost,unit_cost=(total_cost/qty if qty else D0),notes=str(f.get("notes","")).strip() or None)
     db.add(run); db.flush()
     for m,needed in requirements:
@@ -369,7 +467,12 @@ async def production_save(request:Request,db:Session=Depends(get_db)):
     old_qty=D(p.stock); old_value=old_qty*D(p.cost)
     add_movement(db,"product",p,qty,f"Producción #{run.id}","production",run.id)
     if D(p.stock)>0: p.cost=(old_value+total_cost)/D(p.stock)
-    db.commit(); flash(request,"Producción registrada; insumos descontados y producto terminado ingresado."); return RedirectResponse("/production",303)
+    db.commit()
+    if p.recipe:
+        flash(request,"Producción registrada; insumos descontados y producto terminado ingresado.")
+    else:
+        flash(request,"Lote registrado sin receta. Se sumó al stock sin descontar insumos.","ok")
+    return RedirectResponse("/production",303)
 
 @app.post("/production/{rid}/void")
 async def production_void(rid:int,request:Request,db:Session=Depends(get_db)):
