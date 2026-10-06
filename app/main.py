@@ -229,6 +229,33 @@ async def product_save(request:Request, db:Session=Depends(get_db)):
     if delta: add_movement(db,"product",item,delta,"Ajuste manual")
     db.commit(); flash(request,"Producto guardado."); return RedirectResponse("/products",303)
 
+
+@app.post("/products/{item_id}/delete")
+async def product_delete(item_id:int, request:Request, db:Session=Depends(get_db)):
+    require_user(request,db); f=await request.form(); csrf_guard(request,f)
+    item=db.get(Product,item_id)
+    if not item:
+        flash(request,"El producto ya no existe.","error")
+        return RedirectResponse("/products",303)
+    if D(item.stock or 0) != D0:
+        flash(request,f'No se puede borrar "{item.name}" porque todavía tiene stock. Llevá el stock a 0 desde Editar y volvé a intentar.',"error")
+        return RedirectResponse("/products",303)
+    used_in=[]
+    if db.query(SaleItem.id).filter(SaleItem.product_id==item_id).first():
+        used_in.append("ventas")
+    if db.query(ProductionRun.id).filter(ProductionRun.product_id==item_id).first():
+        used_in.append("producciones")
+    if db.query(Recipe.id).filter(Recipe.product_id==item_id).first():
+        used_in.append("una receta")
+    if used_in:
+        flash(request,f'No se puede borrar "{item.name}" porque está asociado a ' + ", ".join(used_in) + ". Podés desactivarlo desde Editar.","error")
+        return RedirectResponse("/products",303)
+    name=item.name
+    db.delete(item)
+    db.commit()
+    flash(request,f'Producto "{name}" borrado.')
+    return RedirectResponse("/products",303)
+
 @app.get("/materials", response_class=HTMLResponse)
 def materials(request:Request, db:Session=Depends(get_db)):
     if (r:=guard(request,db)): return r
